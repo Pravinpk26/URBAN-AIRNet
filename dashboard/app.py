@@ -13,7 +13,10 @@ from streamlit_folium import st_folium
 import plotly.graph_objects as go
 import os
 import warnings
+if "model_choice" not in st.session_state:
+    st.session_state.model_choice = "Random Forest"
 warnings.filterwarnings("ignore")
+
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -124,12 +127,20 @@ saved_features = models.get("feature_cols", FEATURE_COLS)
 avail_features = [c for c in saved_features if c in df.columns]
 
 # ── Predict using best model (RF) ─────────────────────────────────────────────
+
+
 rf_model  = models.get("rf")
 xgb_model = models.get("xgboost")
+model_choice = st.session_state.model_choice
 
-if rf_model and avail_features:
+if avail_features:
     X = df[avail_features].fillna(df[avail_features].median())
-    df["predicted_NO2"] = rf_model.predict(X)
+    if model_choice == "Random Forest" and rf_model:
+        df["predicted_NO2"] = rf_model.predict(X)
+    elif model_choice == "XGBoost" and xgb_model:
+        df["predicted_NO2"] = xgb_model.predict(X)
+    else:
+        df["predicted_NO2"] = df[TARGET_COL]
 else:
     df["predicted_NO2"] = df[TARGET_COL]
 
@@ -145,8 +156,9 @@ with st.sidebar:
     st.selectbox("", ["Alandur Bus Depot, Chennai"], label_visibility="collapsed")
 
     st.markdown("**Model**")
-    model_choice = st.radio("", ["Random Forest", "XGBoost"], label_visibility="collapsed")
-
+    model_choice = st.radio("", ["Random Forest", "XGBoost"],
+                            key="model_choice",
+                            label_visibility="collapsed")
     st.markdown("**Date range**")
     if df[TIME_COL].notna().any():
         min_date = df[TIME_COL].min().date()
@@ -280,8 +292,12 @@ with tab2:
     st.markdown("<div class='section-heading'>NO₂ Observed vs Predicted</div>", unsafe_allow_html=True)
 
     # Show last 180 days
-    df_plot = df.dropna(subset=[TIME_COL]).tail(180).copy()
-    df_plot = df_plot[df_plot[TIME_COL].notna()]
+    df_plot = df.dropna(subset=[TIME_COL]).copy()
+
+    if 'date_range' in locals() and len(date_range) == 2:
+        start = pd.Timestamp(date_range[0])
+        end = pd.Timestamp(date_range[1])
+        df_plot = df_plot[(df_plot[TIME_COL] >= start) & (df_plot[TIME_COL] <= end)]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
